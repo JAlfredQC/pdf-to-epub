@@ -12,14 +12,13 @@ function generateContainerXML(): string {
 </container>`;
 }
 
-function generateOPF(meta EpubMetadata, templates: typeof ALL_TEMPLATES, chapters: PageData[]): string {
+function generateOPF(metadata: EpubMetadata, templates: typeof ALL_TEMPLATES, chapters: PageData[]): string {
   const xhtmlItems = templates
     .filter(t => t.type !== 'css')
     .map((t, i) => `    <item id="${t.id}" href="Text/${t.filename}" media-type="application/xhtml+xml"/>`)
     .join('\n');
 
-  // Add chapter items
-  const chapterItems = chapters.map((_, i) =>
+  const chapterItems = chapters.map((_, i) => 
     `    <item id="chapter-${i}" href="Text/capitulo${i + 1}.xhtml" media-type="application/xhtml+xml"/>`
   ).join('\n');
 
@@ -33,7 +32,7 @@ function generateOPF(meta EpubMetadata, templates: typeof ALL_TEMPLATES, chapter
     .map(t => `    <itemref idref="${t.id}"/>`)
     .join('\n');
 
-  const chapterSpineItems = chapters.map((_, i) =>
+  const chapterSpineItems = chapters.map((_, i) => 
     `    <itemref idref="chapter-${i}"/>`
   ).join('\n');
 
@@ -60,10 +59,9 @@ ${chapterSpineItems}
 </package>`;
 }
 
-function processTemplate(template: string, meta EpubMetadata, chapters: PageData[]): string {
+function processTemplate(template: string, metadata: EpubMetadata, chapters: PageData[]): string {
   let result = template;
-
-  // Replace metadata variables
+  
   result = result.replace(/\{\{title\}\}/g, metadata.title);
   result = result.replace(/\{\{author\}\}/g, metadata.author);
   result = result.replace(/\{\{language\}\}/g, metadata.language);
@@ -72,8 +70,7 @@ function processTemplate(template: string, meta EpubMetadata, chapters: PageData
   result = result.replace(/\{\{isbn\}\}/g, metadata.isbn);
   result = result.replace(/\{\{date\}\}/g, new Date().toLocaleDateString('es-ES'));
   result = result.replace(/\{\{year\}\}/g, new Date().getFullYear().toString());
-
-  // Replace other common variables
+  
   result = result.replace(/\{\{subtitle\}\}/g, '');
   result = result.replace(/\{\{series\}\}/g, '');
   result = result.replace(/\{\{originalTitle\}\}/g, metadata.title);
@@ -86,25 +83,22 @@ function processTemplate(template: string, meta EpubMetadata, chapters: PageData
   result = result.replace(/\{\{synopsisContent\}\}/g, `<p>${metadata.description || ''}</p>`);
   result = result.replace(/\{\{authorBio\}\}/g, `<p>${metadata.author}</p>`);
   result = result.replace(/\{\{notesContent\}\}/g, '');
-
-  // Generate nav items
-  const navItems = chapters.map((ch, i) =>
+  
+  const navItems = chapters.map((ch, i) => 
     `    <li><a href="capitulo${i + 1}.xhtml">${ch.processedText.split('\n')[0] || `Capítulo ${i + 1}`}</a></li>`
   ).join('\n');
   result = result.replace(/\{\{navItems\}\}/g, navItems);
-
-  // Generate landmark items
-  const landmarkItems = chapters.length > 0
+  
+  const landmarkItems = chapters.length > 0 
     ? `    <li><a epub:type="chapter" href="capitulo1.xhtml">Capítulo</a></li>`
     : '';
   result = result.replace(/\{\{landmarkItems\}\}/g, landmarkItems);
-
-  // Generate TOC items
-  const tocItems = chapters.map((ch, i) =>
+  
+  const tocItems = chapters.map((ch, i) => 
     `  <div class="sgc-toc-level-1">\n    <a href="capitulo${i + 1}.xhtml">${ch.processedText.split('\n')[0] || `Capítulo ${i + 1}`}</a>\n  </div>`
   ).join('\n');
   result = result.replace(/\{\{tocItems\}\}/g, tocItems);
-
+  
   return result;
 }
 
@@ -136,43 +130,34 @@ function generateChapterXHTML(chapter: PageData, chapterNum: number): string {
 }
 
 export async function generateEpub(
-  meta EpubMetadata,
+  metadata: EpubMetadata,
   pages: PageData[],
   customTemplates?: typeof ALL_TEMPLATES
 ): Promise<void> {
   const zip = new JSZip();
 
-  // mimetype must be first and uncompressed
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
 
-  // META-INF/container.xml
   zip.folder('META-INF')!.file('container.xml', generateContainerXML());
 
-  // OEBPS folder
   const oebps = zip.folder('OEBPS')!;
   const textFolder = oebps.folder('Text')!;
   const stylesFolder = oebps.folder('Styles')!;
-  oebps.folder('Images')!; // Empty Images folder
+  oebps.folder('Images')!;
 
-  // Use custom templates or defaults
   const templates = customTemplates || ALL_TEMPLATES;
 
-  // Generate content.opf
   oebps.file('content.opf', generateOPF(metadata, templates, pages));
 
-  // Add ALL template files (XHTML)
   for (const template of templates) {
     if (template.type === 'css') {
-      // CSS files go to Styles folder
       stylesFolder.file(template.filename, template.content);
     } else {
-      // XHTML files go to Text folder
       const processed = processTemplate(template.content, metadata, pages);
       textFolder.file(template.filename, processed);
     }
   }
 
-  // Add chapter files
   for (let i = 0; i < pages.length; i++) {
     const chapterXHTML = generateChapterXHTML(pages[i], i + 1);
     textFolder.file(`capitulo${i + 1}.xhtml`, chapterXHTML);
